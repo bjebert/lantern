@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lantern</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<style>
+  :root { --accent: #6d28d9; --accent-dark: #5b21b6; }
+  * { box-sizing: border-box; }
+  /* The page must never scroll as a whole — #log is the only scroller. */
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    margin: 0; background: #fafafa; color: #27272a;
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  #log { min-height: 0; }
+  header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px 6px; background: #fafafa;
+  }
+  header .title { font-weight: 600; color: #18181b; }
+  header .book {
+    color: #a1a1aa; font-size: 12px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; flex: 1;
+  }
+  select {
+    font: 12px "Segoe UI", sans-serif; color: #3f3f46;
+    border: 1px solid #d4d4d8; border-radius: 6px; padding: 3px 6px;
+    background: white; cursor: pointer;
+  }
+  #log { flex: 1; overflow-y: auto; padding: 10px 14px; background: white; }
+  .msg { margin: 0 0 14px; }
+  .msg .who { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+  .msg.you .who { color: var(--accent); }
+  .msg.claude .who { color: #18181b; }
+  .msg .body { overflow-wrap: break-word; }
+  .msg.streaming .body::after {
+    content: "▍"; color: var(--accent); animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  /* the turn a Ctrl+clicked PDF underline points at */
+  .msg.flash { animation: flash 1.8s ease-out; border-radius: 6px; }
+  @keyframes flash {
+    0%, 35% { box-shadow: 0 0 0 4px #ede9fe; background: #ede9fe; }
+    100% { box-shadow: 0 0 0 4px transparent; background: transparent; }
+  }
+  .meta {
+    color: #a1a1aa; font-style: italic; font-size: 12px;
+    margin: 0 0 12px; white-space: pre-wrap;
+  }
+  .body p { margin: 0 0 8px; }
+  .body p:last-child { margin-bottom: 0; }
+  .body h1, .body h2, .body h3, .body h4 {
+    font-size: 14px; margin: 10px 0 4px; color: #18181b;
+  }
+  .body ul, .body ol { margin: 4px 0 8px; padding-left: 22px; }
+  .body li { margin: 2px 0; }
+  .body code {
+    background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 4px;
+    padding: 0 4px; font: 12px Consolas, monospace;
+  }
+  .body pre {
+    background: #18181b; color: #e4e4e7; border-radius: 8px;
+    padding: 10px 12px; overflow-x: auto; margin: 6px 0 10px;
+  }
+  .body pre code { background: none; border: none; padding: 0; color: inherit; }
+  .body blockquote {
+    margin: 6px 0; padding: 2px 10px; border-left: 3px solid #d4d4d8;
+    color: #52525b;
+  }
+  a.cite {
+    color: var(--accent); text-decoration: underline dotted;
+    cursor: pointer; white-space: nowrap;
+  }
+  a.cite:hover { text-decoration: underline; }
+
+  /* buttons: two shapes. .btn is the rectangle (send-side icons, card
+     actions, the ⚙ toggle); .btn.pill is everything inline (offers, header
+     badges, confidence ratings). .seg joins buttons into a segmented
+     group. .chip is a non-interactive grade mark. */
+  .btn {
+    font: 13px "Segoe UI", sans-serif; border: 1px solid #d4d4d8;
+    border-radius: 6px; padding: 2px 8px; background: white;
+    color: #3f3f46; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent); color: white;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .btn.primary:hover { background: var(--accent-dark); }
+  .pill { border-radius: 999px; padding: 1px 9px; font-size: 12px; }
+  .pill kbd {
+    font: 10px Consolas, monospace; color: #a1a1aa; margin-left: 4px;
+  }
+  .pill[aria-pressed="true"] kbd { color: #ede9fe; }
+  .seg {
+    flex: 1; border-radius: 0; margin-left: -1px; padding: 2px 0;
+    font-size: 12px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .seg:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+  .seg:last-child { border-radius: 0 6px 6px 0; }
+  .seg[aria-pressed="true"] { position: relative; z-index: 1; }
+
+  /* header badges appear only when they have something to say */
+  #due, #notesToggle, #pgimg { display: none; }
+  #due.on, #notesToggle.on, #pgimg.on { display: inline-block; }
+  .tog { width: 30px; padding: 0; font-size: 15px; border-radius: 8px; color: #71717a; }
+  .tog[aria-pressed="true"] {
+    background: #ede9fe; border-color: var(--accent); color: var(--accent);
+  }
+
+  #sessRow {
+    display: flex; gap: 6px; padding: 0 12px 6px; background: #fafafa;
+    align-items: center;
+  }
+  #session { flex: 1; min-width: 0; }
+
+  /* settings: model + learning dials, behind the ⚙ (they change once a
+     session, so they don't earn permanent rows) */
+  #setPanel {
+    display: none; margin: 0 12px 6px; padding: 6px 10px;
+    border: 1px solid #e4e4e7; border-radius: 8px; background: white;
+  }
+  #setPanel.on { display: block; }
+  .setRow { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .setRow .lbl { width: 64px; font-size: 12px; color: #71717a; flex: none; }
+  .setRow select { flex: 1; min-width: 0; }
+  #challenge { display: flex; flex: 1; min-width: 0; }
+
+  /* per-page notes: the replacement for the reader's hover popup */
+  #notesPanel {
+    display: none; max-height: 34vh; overflow-y: auto; margin: 0 12px 6px;
+    border: 1px solid #e4e4e7; border-left: 3px solid var(--accent);
+    border-radius: 8px; background: white; padding: 6px 10px; font-size: 13px;
+  }
+  #notesPanel.on { display: block; }
+  .note { padding: 4px 0; border-bottom: 1px solid #f4f4f5; }
+  .note:last-child { border-bottom: none; }
+  .note .nhead { font-size: 11px; color: #71717a; margin-bottom: 2px; }
+  .note .nhead b { color: var(--accent); font-weight: 600; text-transform: uppercase; }
+
+  /* cards & offers inside the log */
+  .card {
+    border: 1px solid #e4e4e7; border-left: 3px solid var(--accent);
+    border-radius: 8px; background: #fafafa; padding: 8px 10px;
+    margin: 0 0 12px; font-size: 13px;
+  }
+  .card-title { font-weight: 600; color: #18181b; margin-bottom: 2px; }
+  .card-body {
+    color: #52525b; font-size: 12px; margin-bottom: 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .card-actions { display: flex; gap: 6px; }
+  .offer {
+    font-style: normal; color: #52525b; border-left: 3px solid #d4d4d8;
+    padding: 2px 10px; transition: opacity .2s; white-space: normal;
+  }
+  .offer-actions { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+  .offer.fade { opacity: 0; }
+  body.busy .card .btn, body.busy .offer .btn { opacity: .5; pointer-events: none; }
+  body.busy [data-act="later"], body.busy [data-act="dismiss"] {
+    opacity: 1; pointer-events: auto;
+  }
+  .chip {
+    font-size: 11px; font-weight: 500; margin-left: 6px; padding: 0 6px;
+    border-radius: 999px; border: 1px solid transparent; vertical-align: 1px;
+  }
+  .chip.ok { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
+  .chip.part { color: #b45309; border-color: #fde68a; background: #fffbeb; }
+  .chip.miss { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+  .chip.over { font-weight: 700; }
+
+  .body table { border-collapse: collapse; margin: 6px 0 10px; font-size: 13px; }
+  .body th, .body td { border: 1px solid #e4e4e7; padding: 3px 8px; }
+  .katex { font-size: 1.05em; }
+  .katex-display { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
+
+  #quizBar {
+    display: none; gap: 6px; padding: 0 12px 6px; background: #fafafa;
+    align-items: center; font-size: 12px; color: #52525b;
+  }
+  #quizBar.on { display: flex; }
+  #inputRow { display: flex; gap: 6px; padding: 8px 12px; background: #fafafa; }
+  textarea {
+    flex: 1; resize: none; height: 62px; padding: 7px 9px;
+    font: 14px "Segoe UI", sans-serif; color: #27272a;
+    border: 1px solid #d4d4d8; border-radius: 8px; outline: none;
+  }
+  textarea:focus { border-color: var(--accent); }
+  #sendBtn {
+    width: 44px; border: none; border-radius: 8px; background: var(--accent);
+    color: white; font-size: 15px; cursor: pointer;
+  }
+  #sendBtn:hover { background: var(--accent-dark); }
+  #sendBtn:disabled { background: #d4d4d8; cursor: default; }
+  #status { padding: 0 14px 7px; color: #a1a1aa; font-size: 11px; }
+</style>
+</head>
+<body>
+  <header>
+    <span class="title">Claude</span>
+    <span class="book" id="book"></span>
+    <button id="due" class="btn pill" title="concepts due for spaced review"></button>
+    <button id="notesToggle" class="btn pill" aria-pressed="false"></button>
+    <button id="setBtn" class="btn tog" aria-pressed="false" title="Settings: model, challenge level, explanation style">⚙</button>
+  </header>
+  <div id="sessRow">
+    <select id="session" title="chat session"></select>
+    <button id="newSess" class="btn" title="start a new chat">+</button>
+  </div>
+  <div id="setPanel">
+    <div class="setRow"><span class="lbl">Model</span><select id="model" title="model"></select></div>
+    <div class="setRow"><span class="lbl">Challenge</span><div id="challenge" role="group" aria-label="challenge level"></div></div>
+    <div class="setRow"><span class="lbl">Style</span><select id="style" title="explanation style"></select></div>
+  </div>
+  <div id="notesPanel"></div>
+  <div id="log"></div>
+  <div id="quizBar">
+    <span id="quizN"></span>
+    <span>How sure?</span>
+    <button class="btn pill" data-conf="guess" title="Alt+1">Guess<kbd>1</kbd></button>
+    <button class="btn pill" data-conf="sure" title="Alt+2">Fairly sure<kbd>2</kbd></button>
+    <button class="btn pill" data-conf="certain" title="Alt+3">Certain<kbd>3</kbd></button>
+    <button class="btn pill" data-conf="" title="answer without rating">×</button>
+  </div>
+  <div id="inputRow">
+    <button id="pgimg" class="btn tog" title="attach an image of the current page to your next message (so Claude can see its figures)">📷</button>
+    <textarea id="input" placeholder="Ask about what you're reading…" autofocus></textarea>
+    <button id="sendBtn" title="send">▶</button>
+  </div>
+  <div id="status">connecting…</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const $log = $("log"), $input = $("input"), $send = $("sendBtn"),
+      $status = $("status"), $model = $("model"), $book = $("book"),
+      $session = $("session"), $newSess = $("newSess"),
+      $challenge = $("challenge"), $style = $("style"), $due = $("due"),
+      $quizBar = $("quizBar"), $quizN = $("quizN"),
+      $setBtn = $("setBtn"), $setPanel = $("setPanel"),
+      $notesToggle = $("notesToggle"), $notesPanel = $("notesPanel"),
+      $pgimg = $("pgimg");
+
+let live = null;        // {el, buf} for the currently-streaming claude message
+let busySince = null, ticker = null, modelLabel = "";
+let bookName = "";
+let dials = { challenge: 1, style: "standard" };
+let dialOptions = { challenges: [], styles: [] };
+let quiz = null, confidence = null;   // pending quiz question / picked rating
+let review = null;                    // {n, minutes, due}
+let snoozed = 0;                      // review count hidden behind the 🎯 badge after "Later"
+let notes = { page: null, items: [] };
+
+const CHALLENGE_LABEL = { 0: "Tell me", 1: "Check", 2: "Try first", 3: "Work" };
+const CHALLENGE_TIP = {
+  0: "Just tell me — straight answers, never a question back",
+  1: "Offer a check — answers first, then one optional quick check question",
+  2: "Try first — you're asked to guess or predict before the reveal (pretesting)",
+  3: "Make me work — hints and an application task after every explanation",
+};
+const CONF_WORD = { guess: "guess", sure: "fairly sure", certain: "certain" };
+
+function setPage(page, total) {
+  const p = page ? ` · p. ${page}${total ? "/" + total : ""}` : "";
+  $book.textContent = bookName + p;
+}
+
+/* ---------- rendering ---------- */
+
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const MATH_RE = /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$/g;
+// A single-$ pair is math only by pandoc's rule: no space just inside either
+// delimiter and no digit right after the closing one — so "$20 and $80" stays
+// money. Real pairs become \( … \); anything else is left as literal text.
+const DOLLAR_OK = /^\$(?=\S)[^$\n]*?\S\$$/;
+function mathSpan(m, after) {
+  if (!m.startsWith("$") || m.startsWith("$$")) return m;
+  if (!DOLLAR_OK.test(m) || /^\d/.test(after)) return null;
+  return "\\(" + m.slice(1, -1) + "\\)";
+}
+// [p.N] / [p.N-M] / "PDF p. N" citations become links that jump the reader.
+const CITE_RE = /\[p\.\s*(\d+)(?:\s*[–—-]\s*\d+)?\]|\bPDF\s+p(?:age|\.)\s*(\d+)/g;
+// The bus strips Claude's learning trailer; this is belt-and-braces.
+const TRAILER_RE = /<!--\s*rb\b[\s\S]*?-->/g;
+
+function linkifyCites(html) {
+  return html.replace(CITE_RE, (m, a, b) =>
+    `<a class="cite" data-page="${a || b}">${m}</a>`);
+}
+
+// Markdown + KaTeX: stash math spans so marked can't mangle _ and * inside them.
+function renderRich(el, text) {
+  text = text.replace(TRAILER_RE, "").trimEnd();
+  if (typeof marked === "undefined") { el.textContent = text; return; }
+  const stash = [];
+  const protectedText = text.replace(MATH_RE, (m, at, src) => {
+    const span = mathSpan(m, src.charAt(at + m.length));
+    if (span === null) return m;                   // not math: leave it literal
+    return "" + (stash.push(span) - 1) + "";
+  });
+  let html = marked.parse(protectedText, { breaks: true, mangle: false });
+  html = html.replace(/(\d+)/g, (_, i) => esc(stash[+i]));
+  el.innerHTML = linkifyCites(html);
+  if (typeof renderMathInElement !== "undefined") {
+    renderMathInElement(el, {
+      delimiters: [
+        { left: "$$", right: "$$", display: true },
+        { left: "\\[", right: "\\]", display: true },
+        { left: "\\(", right: "\\)", display: false },
+      ],
+      throwOnError: false,
+    });
+  }
+}
+
+function nearBottom() {
+  return $log.scrollHeight - $log.scrollTop - $log.clientHeight < 80;
+}
+function scrollDown(force) {
+  if (force || nearBottom()) $log.scrollTop = $log.scrollHeight;
+}
+
+function addMsg(role, text, rich, meta) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg " + role;
+  const who = document.createElement("div");
+  who.className = "who";
+  who.textContent = role === "you" ? "You" : "Claude";
+  const body = document.createElement("div");
+  body.className = "body";
+  if (rich) renderRich(body, text); else body.textContent = text;
+  wrap.append(who, body);
+  $log.appendChild(wrap);
+  if (meta && meta.quiz) addChip(who, meta.quiz);
+  scrollDown(role === "you");
+  return { wrap, body, who };
+}
+
+// ✓ / ~ / ✗ grade chip on the answer that was graded (hypercorrection:
+// a confident miss is the one worth noticing, so it's bold).
+function addChip(who, q) {
+  const chip = document.createElement("span");
+  const cls = { correct: "ok", partial: "part", wrong: "miss" }[q.grade] || "part";
+  chip.className = "chip " + cls + (q.grade === "wrong" && q.confidence === "certain" ? " over" : "");
+  const glyph = { correct: "✓", partial: "~", wrong: "✗" }[q.grade] || "~";
+  chip.textContent = glyph + (q.confidence ? " " + CONF_WORD[q.confidence] : "");
+  chip.title = `graded ${q.grade}` + (q.confidence ? `, you said ${CONF_WORD[q.confidence]}` : ", unrated")
+             + (q.concept ? ` — ${q.concept}` : "");
+  who.appendChild(chip);
+}
+
+function addMeta(text) {
+  const el = document.createElement("div");
+  el.className = "meta";
+  el.textContent = text;
+  $log.appendChild(el);
+  scrollDown(false);
+  return el;
+}
+
+function renderHistory(hist) {
+  $log.innerHTML = "";
+  live = null;
+  mountCard();
+  for (const h of hist || []) {
+    if (h.role === "meta") addMeta(h.text);
+    else addMsg(h.role, h.text, true, h);
+  }
+  scrollDown(true);
+}
+
+function setSessions(list) {
+  $session.innerHTML = "";
+  for (const s of list || []) {
+    const opt = document.createElement("option");
+    opt.value = s.id; opt.textContent = s.label;
+    $session.appendChild(opt);
+    if (s.current) $session.value = s.id;
+  }
+}
+
+/* ---------- learning dials ---------- */
+
+function buildDialControls(opts) {
+  dialOptions = opts || dialOptions;
+  $challenge.innerHTML = "";
+  for (const c of dialOptions.challenges || []) {
+    const b = document.createElement("button");
+    b.className = "btn seg"; b.dataset.level = c.id;
+    b.textContent = CHALLENGE_LABEL[c.id] || c.label;
+    b.title = CHALLENGE_TIP[c.id] || c.label;
+    b.setAttribute("aria-pressed", "false");
+    $challenge.appendChild(b);
+  }
+  $style.innerHTML = "";
+  for (const s of dialOptions.styles || []) {
+    const opt = document.createElement("option");
+    opt.value = s.id; opt.textContent = s.label;
+    $style.appendChild(opt);
+  }
+}
+
+function setDials(d) {
+  if (!d) return;
+  dials = { ...dials, ...d };
+  for (const b of $challenge.querySelectorAll(".seg"))
+    b.setAttribute("aria-pressed", +b.dataset.level === +dials.challenge ? "true" : "false");
+  $style.value = dials.style;
+}
+
+function postDials(patch) {
+  setDials(patch);                       // optimistic; the `dials` event confirms
+  fetch("/dials", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch) }).catch(() => {});
+}
+
+$challenge.addEventListener("click", e => {
+  const b = e.target.closest(".seg");
+  if (b) postDials({ challenge: +b.dataset.level });
+});
+$style.addEventListener("change", () => postDials({ style: $style.value }));
+
+function showSettings(on) {
+  $setPanel.classList.toggle("on", on);
+  $setBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  if (!on) $input.focus();
+}
+$setBtn.addEventListener("click", () => showSettings(!$setPanel.classList.contains("on")));
+
+/* ---------- quiz confidence ---------- */
+
+function setQuiz(q) {
+  quiz = q && q.pending ? q : null;
+  confidence = null;
+  $quizBar.classList.toggle("on", !!quiz);
+  $quizN.textContent = quiz && quiz.run ? `q${quiz.run.n}/${quiz.run.total} ·` : "";
+  for (const b of $quizBar.querySelectorAll(".pill")) b.setAttribute("aria-pressed", "false");
+  if (quiz) $input.placeholder = "Your answer…";
+  else $input.placeholder = "Ask about what you're reading…";
+}
+
+function pickConf(c) {
+  confidence = c || null;
+  for (const b of $quizBar.querySelectorAll(".pill"))
+    b.setAttribute("aria-pressed", b.dataset.conf === (c || "") && c ? "true" : "false");
+  if (!c) $quizBar.classList.remove("on");   // × : answer unrated this time
+  fetch("/confidence", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confidence }) }).catch(() => {});
+  $input.focus();
+}
+
+$quizBar.addEventListener("click", e => {
+  const b = e.target.closest(".pill");
+  if (b) pickConf(b.dataset.conf);
+});
+
+/* ---------- review card & badge ---------- */
+
+// The card is the review's one home; the 🎯 badge only stands in for it
+// after "Later", so the two are never on screen together.
+function setReview(r) {
+  review = r && r.n > 0 ? r : null;
+  if (review) snoozed = 0;
+  $due.classList.toggle("on", !review && snoozed > 0);
+  if (snoozed) {
+    $due.textContent = `🎯 ${snoozed}`;
+    $due.title = "review snoozed — click to bring the card back";
+  }
+  mountCard();
+}
+
+function renderCard({ kind, title, body, tip, actions }) {
+  const card = document.createElement("div");
+  card.className = "card"; card.dataset.kind = kind;
+  const t = document.createElement("div"); t.className = "card-title"; t.textContent = title;
+  const b = document.createElement("div"); b.className = "card-body"; b.textContent = body;
+  if (tip) b.title = tip;
+  const a = document.createElement("div"); a.className = "card-actions";
+  for (const act of actions) {
+    const btn = document.createElement("button");
+    btn.className = "btn" + (act.primary ? " primary" : "");
+    btn.dataset.act = act.id; btn.textContent = act.label;
+    a.appendChild(btn);
+  }
+  card.append(t, b, a);
+  return card;
+}
+
+// The review card lives at the top of the log (re-mounted by renderHistory).
+function mountCard() {
+  const old = $log.querySelector('.card[data-kind="review"]');
+  if (old) old.remove();
+  if (!review) return;
+  const names = review.due.map(d => d.concept);
+  const tip = review.due.map(d =>
+    `${d.concept}${d.title ? " — " + d.title : ""}` +
+    `${d.misses ? ` (missed ${d.misses})` : ""}${d.last ? `, last ${d.last}` : ""}` +
+    `${d.priority ? " ⚠" : ""}`).join("\n");
+  const card = renderCard({
+    kind: "review",
+    title: `🎯 Review ${review.n} due · ~${review.minutes} min`,
+    body: names.slice(0, 3).join(" · ") + (names.length > 3 ? " …" : ""),
+    tip,
+    actions: [{ id: "start", label: "Start", primary: true },
+              { id: "later", label: "Later" }, { id: "skip", label: "Skip" }],
+  });
+  $log.prepend(card);
+}
+
+function postReview(action) {
+  fetch("/review", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action }) }).catch(() => {});
+}
+
+$due.addEventListener("click", () => postReview("show"));
+
+/* ---------- nudges (budgeted offers from the bus) ---------- */
+
+function addOffer(n) {
+  const el = document.createElement("div");
+  el.className = "meta offer"; el.dataset.nudge = n.id; el.dataset.kind = n.kind;
+  const t = document.createElement("span"); t.textContent = n.text;
+  const acts = document.createElement("span"); acts.className = "offer-actions";
+  for (const a of n.actions || []) {
+    const b = document.createElement("button");
+    b.className = "btn pill"; b.dataset.act = a.id; b.textContent = a.label;
+    acts.appendChild(b);
+  }
+  const x = document.createElement("button");
+  x.className = "btn pill"; x.dataset.act = "dismiss"; x.title = "dismiss"; x.textContent = "×";
+  acts.appendChild(x);
+  el.append(t, acts);
+  $log.appendChild(el);
+  scrollDown(false);
+}
+
+function clearOffers() {
+  for (const el of $log.querySelectorAll(".offer")) {
+    el.classList.add("fade");
+    setTimeout(() => el.remove(), 200);
+  }
+}
+
+/* ---------- page notes (replaces the reader's hover popup) ---------- */
+
+function setNotes(n) {
+  notes = n || { page: null, items: [] };
+  const k = notes.items.length;
+  $notesToggle.classList.toggle("on", k > 0);
+  if (!k) { $notesPanel.classList.remove("on"); $notesToggle.setAttribute("aria-pressed", "false"); return; }
+  $notesToggle.textContent = `📝 ${k}`;
+  $notesToggle.title = `${k} note${k > 1 ? "s" : ""} on this page — click to show`;
+  $notesPanel.innerHTML = "";
+  for (const it of notes.items) {
+    const div = document.createElement("div"); div.className = "note";
+    const head = document.createElement("div"); head.className = "nhead";
+    const kind = document.createElement("b"); kind.textContent = it.kind;
+    head.append(kind, document.createTextNode(` · ${it.when}${it.title ? " · " + it.title : ""}`));
+    const body = document.createElement("div"); body.className = "body";
+    renderRich(body, it.text || "");
+    div.append(head, body);
+    $notesPanel.appendChild(div);
+  }
+}
+$notesToggle.addEventListener("click", () => {
+  const on = !$notesPanel.classList.contains("on");
+  $notesPanel.classList.toggle("on", on);
+  $notesToggle.setAttribute("aria-pressed", on ? "true" : "false");
+});
+
+/* ---------- status ---------- */
+
+function setBusy(busy) {
+  $send.disabled = busy;
+  $model.disabled = busy;
+  $session.disabled = busy;
+  $newSess.disabled = busy;
+  $style.disabled = busy;
+  for (const b of $challenge.querySelectorAll(".seg")) b.disabled = busy;
+  for (const b of $quizBar.querySelectorAll(".pill")) b.disabled = busy;
+  document.body.classList.toggle("busy", busy);
+  if (busy && !busySince) {
+    busySince = Date.now();
+    ticker = setInterval(() => {
+      const s = Math.round((Date.now() - busySince) / 1000);
+      $status.textContent = `thinking… ${s}s (${modelLabel})`;
+    }, 500);
+    $status.textContent = `thinking… (${modelLabel})`;
+  } else if (!busy) {
+    clearInterval(ticker);
+    busySince = null;
+  }
+}
+
+/* ---------- events from the bus ---------- */
+
+function connect() {
+  const es = new EventSource("/events");
+  es.addEventListener("user", e => {
+    const d = JSON.parse(e.data);
+    clearOffers();
+    addMsg("you", d.text, true);
+    if (quiz) $quizBar.classList.remove("on");   // rating captured; hide until re-asked
+  });
+  es.addEventListener("delta", e => {
+    const d = JSON.parse(e.data);
+    if (!live) {
+      const m = addMsg("claude", "", false);
+      m.wrap.classList.add("streaming");
+      live = { el: m, buf: "" };
+    }
+    live.buf += d.text;
+    live.el.body.textContent = live.buf.replace(TRAILER_RE, "");   // plain while streaming, rich on done
+    scrollDown(false);
+  });
+  es.addEventListener("done", e => {
+    const d = JSON.parse(e.data);
+    if (d.ok) {
+      if (!live) live = { el: addMsg("claude", "", false), buf: "" };
+      live.el.wrap.classList.remove("streaming");
+      renderRich(live.el.body, d.text);
+    } else {
+      if (live) live.el.wrap.remove();
+      addMeta(d.text);
+    }
+    live = null;
+    scrollDown(false);
+    $status.textContent = d.elapsed ? `ready · ${d.elapsed}s` : "ready";
+  });
+  es.addEventListener("meta", e => addMeta(JSON.parse(e.data).text));
+  // Session switched (or created): swap the whole transcript.
+  es.addEventListener("session", e => {
+    const d = JSON.parse(e.data);
+    setReview(d.review);
+    renderHistory(d.history);
+    setSessions(d.sessions);
+    setDials(d.dials);
+    setQuiz(d.quiz);
+  });
+  // Session list changed (e.g. auto-title landed): refresh labels only.
+  es.addEventListener("sessions", e =>
+    setSessions(JSON.parse(e.data).sessions));
+  // Ctrl+click on a PDF underline: scroll to the turn behind it (the
+  // "session" event that precedes it, if any, has already re-rendered),
+  // or open the page notes for a saved highlight.
+  es.addEventListener("jump", e => {
+    const d = JSON.parse(e.data);
+    if (d.notes) {
+      if (notes.items.length) {
+        $notesPanel.classList.add("on");
+        $notesToggle.setAttribute("aria-pressed", "true");
+      }
+      return;
+    }
+    const el = $log.querySelectorAll(".msg.you")[d.turn - 1];
+    if (!el) return;
+    el.scrollIntoView({ block: "start", behavior: "smooth" });
+    el.classList.remove("flash"); void el.offsetWidth;   // restart the animation
+    el.classList.add("flash");
+  });
+  es.addEventListener("dials", e => setDials(JSON.parse(e.data)));
+  es.addEventListener("quiz", e => {
+    const d = JSON.parse(e.data);
+    if (d.result) {
+      const yous = $log.querySelectorAll(".msg.you .who");
+      const who = yous[yous.length - 1];
+      if (who && !who.querySelector(".chip")) addChip(who, d.result);
+    }
+    setQuiz(d);
+  });
+  es.addEventListener("review", e => setReview(JSON.parse(e.data)));
+  es.addEventListener("nudge", e => addOffer(JSON.parse(e.data)));
+  es.addEventListener("notes", e => setNotes(JSON.parse(e.data)));
+  // "Copy to chat" from the reader's right-click menu: quote the passage
+  // into the composer so the user can ask about it in their own words.
+  es.addEventListener("compose", e => {
+    const d = JSON.parse(e.data);
+    const quoted = d.text.trim().split("\n").map(l => "> " + l).join("\n");
+    const base = $input.value.trim();
+    $input.value = (base ? base + "\n\n" : "") + quoted + "\n\n";
+    $input.scrollTop = $input.scrollHeight;
+    $input.focus();
+    reqFocus();
+  });
+  es.addEventListener("page", e => {
+    const d = JSON.parse(e.data);
+    setPage(d.page, d.total);
+  });
+  es.addEventListener("status", e => {
+    const d = JSON.parse(e.data);
+    if (d.model) { $model.value = d.model; syncModelLabel(); }
+    setBusy(d.busy);
+    if (!d.busy && !busySince) $status.textContent = $status.textContent || "ready";
+  });
+  es.onerror = () => { $status.textContent = "reconnecting…"; };
+  es.onopen = () => { if (!busySince) $status.textContent = "ready"; };
+}
+
+function syncModelLabel() {
+  const opt = $model.selectedOptions[0];
+  modelLabel = opt ? opt.textContent : $model.value;
+}
+
+/* ---------- actions ---------- */
+
+async function send() {
+  const text = $input.value.trim();
+  if (!text) return;
+  $input.value = "";
+  const body = { text };
+  if (quiz) body.confidence = confidence;     // null = answered unrated
+  try {
+    await fetch("/ask", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body) });
+  } catch {
+    addMeta("[error] couldn't reach the context bus");
+  }
+}
+
+// Reparented cross-process, Edge never wins the OS keyboard focus by itself —
+// tell the shell (via the bus) to hand it over whenever we're clicked.
+function reqFocus() {
+  fetch("/focus", { method: "POST" }).catch(() => {});
+}
+window.addEventListener("mousedown", e => {
+  // don't yank focus off the dropdowns
+  if (![$model, $session, $style].includes(e.target)) reqFocus();
+}, true);
+window.addEventListener("load", reqFocus);
+$input.addEventListener("focus", reqFocus);
+
+// Delegated clicks inside the log: citations, review-card actions, offers.
+$log.addEventListener("click", e => {
+  const a = e.target.closest("a.cite");
+  if (a) {
+    e.preventDefault();
+    fetch("/goto", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: +a.dataset.page }) }).catch(() => {});
+    return;
+  }
+  const btn = e.target.closest("[data-act]");
+  if (!btn) return;
+  const card = btn.closest(".card");
+  if (card) {
+    const act = btn.dataset.act;
+    if (act === "later") { snoozed = review ? review.n : 0; review = null; setReview(null); }
+    if (act !== "later" && busySince) return;   // server-bound, wait for the turn
+    postReview(act);
+    if (act !== "later") card.remove();
+    $input.focus();
+    return;
+  }
+  const offer = btn.closest(".offer");
+  if (offer) {
+    const act = btn.dataset.act;
+    if (act !== "dismiss" && busySince) return;
+    fetch("/nudge", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: offer.dataset.nudge, action: act }) }).catch(() => {});
+    offer.remove();
+    $input.focus();
+  }
+});
+
+$pgimg.addEventListener("click", () => {
+  fetch("/pageimg", { method: "POST" }).catch(() => {});
+});
+
+$send.addEventListener("click", send);
+$input.addEventListener("keydown", e => {
+  if (quiz && e.altKey && /^[123]$/.test(e.key)) {
+    e.preventDefault();
+    pickConf(["guess", "sure", "certain"][+e.key - 1]);
+    return;
+  }
+  if (e.key === "Escape" && $setPanel.classList.contains("on")) { showSettings(false); return; }
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+$model.addEventListener("change", () => {
+  syncModelLabel();
+  fetch("/model", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: $model.value }) }).catch(() => {});
+});
+$session.addEventListener("change", () => {
+  fetch("/session", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: $session.value }) }).catch(() => {});
+});
+$newSess.addEventListener("click", () => {
+  fetch("/session", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ new: true }) }).catch(() => {});
+});
+
+/* ---------- boot: rehydrate then subscribe ---------- */
+
+(async () => {
+  try {
+    const st = await (await fetch("/state")).json();
+    bookName = st.book;
+    setPage(st.page, st.total);
+    for (const m of st.models) {
+      const opt = document.createElement("option");
+      opt.value = m.id; opt.textContent = m.label;
+      $model.appendChild(opt);
+    }
+    $model.value = st.model;
+    syncModelLabel();
+    $pgimg.classList.toggle("on", !!st.can_image);
+    setSessions(st.sessions);
+    buildDialControls(st.dial_options);
+    setDials(st.dials);
+    setReview(st.review);            // before renderHistory: it mounts the card
+    renderHistory(st.history);
+    setQuiz(st.quiz);
+    setNotes(st.notes);
+    if (!st.sdk) addMeta("claude-agent-sdk not installed — slow claude -p fallback in use");
+    setBusy(st.busy);
+  } catch {
+    $status.textContent = "bus unreachable";
+  }
+  connect();
+  $input.focus();
+})();
+</script>
+</body>
+</html>

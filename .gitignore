@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Book stores: ingested PDFs/ebooks (copyrighted), extracted text, per-book
+# journals, chat sessions and prefs. All user data, never committed.
+books/
+
+# Runtime artifacts
+*.readbuddy-orig
+*.lantern-orig
+lantern_diag.log
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
