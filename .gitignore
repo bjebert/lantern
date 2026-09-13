@@ -17,3 +17,6 @@ lantern_diag.log
 .idea/
 Thumbs.db
 .DS_Store
+
+# Private design notes, kept locally only
+notes/

@@ -1,8 +1,8 @@
-# Lantern
+# lantern
 
 An AI learning companion that runs alongside SumatraPDF. It explains, summarises, quizzes and tracks your understanding as you read eBooks and PDFs, especially technical ones.
 
-![Lantern](app/lantern.png)
+<img src="app/lantern.png" alt="lantern" width="96">
 
 ## What it does
 
@@ -34,4 +34,4 @@ lantern.bat path\to\book.pdf
 
 ## More
 
-`log.md` is the dated dev log. `notes/` holds design notes. Book data lives in `books/` and is never committed.
+`log.md` is the dated dev log. Book data lives in `books/` and is never committed.
