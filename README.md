@@ -1,25 +1,11 @@
 # Lantern
-
-*(formerly readbuddy; renamed 2026-09-13. The icon is the Lantern relic from Slay the Spire.)*
-
-Claude alongside the page. A learning companion that sits next to your existing eBook reader — it knows what page you're on and what you've selected, answers questions in context, and keeps a persistent map of your journey through each book.
+An-AI assisted learning companion that runs alongside SumatraPDF to help explain, summarise, refresh, and improve learning & understanding when reading eBooks/PDFs, especially technical content.
 
 ## Vision
 
 - **Context-aware Q&A** — ask about the current page/section without pasting anything; highlight text and ask for a different perspective, ELI5, an analogy, a worked example.
 - **Learning journal per book** — a persistent record of concepts explored, questions asked, explanations that clicked, misconceptions corrected. The tutor reads it at session start and relates new material back to it.
 - **Journey awareness** — rough model of progress through the book, used as a teaching tool ("this builds on the eigenvector intuition from ch. 3").
-
-## Approach (decided 2026-08-27)
-
-**Do not build a reader.** Lantern is a companion sidebar on top of existing readers (Calibre viewer, SumatraPDF, anything else), connected via lightweight adapters:
-
-1. A small local server ("context bus") receives selections/positions from the reader.
-2. Book text is extracted once per book (calibre CLI) so any text snippet can be located → chapter/section/position inferred without reader cooperation.
-3. Claude (API / Agent SDK) answers with page context + learning journal loaded.
-4. Sidebar UI: browser window docked beside the reader — or embedded *inside* Calibre's Lookup panel, which is itself a browser pointed at a configurable URL.
-
-See `notes/2026-08-27-reader-integration.md` for the integration research and hook details.
 
 ## Running it (v0.1 shell, 2026-08-29)
 
@@ -28,7 +14,7 @@ See `notes/2026-08-27-reader-integration.md` for the integration research and ho
 (printed page + %), the section you were in, last opened, and journal size;
 double-click / Enter resumes it, "Open PDF…" browses for anything else.
 
-**First open of any book (2026-09-08): the shell indexes it itself** — pure
+**First open of any book (2026-09-08):** — pure
 local text extraction with pymupdf (~1s for a PDF), so the "book text not
 indexed" fallback now only appears when ingestion declines (scanned PDF: OCR
 it first) or crashes. **EPUB / MOBI / FB2 work too**: pymupdf lays the ebook
